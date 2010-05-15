@@ -1,0 +1,13 @@
+#ignore object files
+*.[oa]
+#ignore boinc files generated from runs
+tests/boinc_finish_called
+tests/init_data.xml
+tests/out
+tests/stars.txt
+tests/stderr.txt
+tests/astronomy_parameters.txt
+#ignore emacs temp files
+*~
+#ignore compiled files as best as possible
+tests/milkyway3_0.*
