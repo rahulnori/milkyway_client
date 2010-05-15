@@ -19,6 +19,7 @@
   along with Milkyway@Home.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+
 extern "C++" {
 #include "../astronomy/parameters.h"
 #include "../astronomy/star_points.h"
