@@ -97,7 +97,7 @@ GPU_APP_OBJS = \
 	$(GPU_DIR)/coords.o \
 	$(GPU_DIR)/gauss_legendre.o \
 	$(GPU_DIR)/cpu_coords.o \
-	$(GPU_DIR)/cpu_integrals.o \
+#	$(GPU_DIR)/cpu_integrals.o 
 #	$(SEARCH_DIR)/hessian.o 
 #	$(SEARCH_DIR)/gradient.o 
 #	$(SEARCH_DIR)/newton_method.o 
