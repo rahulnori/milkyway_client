@@ -6,8 +6,30 @@ What this document attempts to describe
 4. Where to make changes if the Milkyway@Home algorithm changes
 5. Description of each file
 
+1. How to setup a development environment to build the CUDA application
+To modify CUDA source code (*.cu) a simple text editor is all that is required. If
+Windows is used there is a Visual Studio solution file that works good enough
+for my needs.  In order to actually build the application the CUDA 2.3 Toolkit and 
+CUDA 2.3 SDK are required, they are located here 
+http://developer.nvidia.com/object/cuda_archive.html
+
+2. How to build the CUDA application on GNU/Linux
+With the CUDA 2.3 Toolkit/SDK installed building is as simple as 
+a. Updating the Makefile to include the paths to the toolkit and SDK
+b. typing 'make linux_x86_64_gpu' for a 64 bit executable (requires 64 bit versions of 
+the toolkit and SDK)
+c. typing 'make linux_i686_gpu' for a 32 bit executable (requires 32 bit versions of
+the toolkit and SDK) [I never build 32 bit CUDA applications for GNU/Linux]
+
+3. How to build the CUDA application on Windows
+I just used Visual Studio to build the application.  Just set the correct
+configuration targets and Visual Studio should build it. The paths to the CUDA SDK
+and Toolkit might need to change based on what computer is being used to build.
 
 4. Where to make changes if the Milkyway@Home algorithm changes
+The files evaluation_gpu6_double_shared.cu and evaluation_gpu6_likelihood.cu contain 
+the majority of the algorithm.  The other file evaluation_gpu6.cu contains the setup
+code.
 
 5. Description of each file
 coords.c/coords.h

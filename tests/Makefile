@@ -96,7 +96,7 @@ GPU_APP_OBJS = \
 	$(GPU_DIR)/evaluation_gpu6.o \
 	$(GPU_DIR)/coords.o \
 	$(GPU_DIR)/gauss_legendre.o \
-	$(GPU_DIR)/cpu_coords.o \
+	$(GPU_DIR)/cpu_coords.o 
 #	$(GPU_DIR)/cpu_integrals.o 
 #	$(SEARCH_DIR)/hessian.o 
 #	$(SEARCH_DIR)/gradient.o 
