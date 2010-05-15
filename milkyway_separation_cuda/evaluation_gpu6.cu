@@ -19,11 +19,10 @@
   along with Milkyway@Home.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-
 extern "C++" {
-#include "../astronomy/parameters.h"
-#include "../astronomy/star_points.h"
-#include "../astronomy/evaluation_optimized.h"
+#include "../milkyway_separation/parameters.h"
+#include "../milkyway_separation/star_points.h"
+#include "../milkyway_separation/evaluation_optimized.h"
 #include "coords.h"
 #include "cpu_coords.h"
 #include "r_constants.h"
@@ -71,6 +70,7 @@ __device__ __constant__ GPU_PRECISION constant_dx[MAX_CONVOLVE];
 __device__ __constant__ GPU_PRECISION constant_qgaus_W[MAX_CONVOLVE];
 
 __device__ __constant__ GPU_PRECISION constant_background_weight[1];
+__device__ __constant__ GPU_PRECISION constant_exp_sum[1];
 __device__ __constant__ GPU_PRECISION constant_stream_weight[4];
 
 #define MAX_STREAMS (4)
@@ -81,13 +81,14 @@ GPU_PRECISION *device_fstream_c;
 GPU_PRECISION *device_fstream_a;
 #endif
 
-GPU_PRECISION   *device_r_point;
-GPU_PRECISION   *device_qw_r3_N;
 GPU_PRECISION	*device_stars;
 
 GPU_PRECISION	*device_probability;
-GPU_PRECISION	*device_probability_correction;
+GPU_PRECISION	*device_bg_only;
+GPU_PRECISION	*device_st_only;
 GPU_PRECISION	*host_probability;
+GPU_PRECISION	*host_bg_only;
+GPU_PRECISION	*host_st_only;
 
 int max_blocks = 128;
 //int max_blocks = 50000;
@@ -240,14 +241,17 @@ int choose_gpu(int argc, char **argv) {
   //check for the --device command line argument
   int device_arg = -1; //invalid device
   for(unsigned int idx = 1;idx < argc;++idx) {
-    if (strncmp("--device", argv[idx], 8) == 0) {
-      //next arg is the number of the device
-      if (idx+1 < argc)
-	{
-	  device_arg = atoi(argv[idx+1]);
-	  break;
+    if (argv[idx])
+      {
+	if (strncmp("--device", argv[idx], 8) == 0) {
+	  //next arg is the number of the device
+	  if (idx+1 < argc)
+	    {
+	      device_arg = atoi(argv[idx+1]);
+	      break;
+	    }
 	}
-    }
+      }
   }
   if (device_arg >= 0)
     fprintf(stderr, "Device index specified on the command line was %d\n", device_arg);
@@ -413,6 +417,8 @@ void gpu__initialize()
       double **r_point = new double*[ap->integral[i]->r_steps];
       double *ids = new double[ap->integral[i]->nu_steps];
       double *nus = new double[ap->integral[i]->nu_steps];
+      double **r_in_mag = new double*[ap->integral[i]->r_steps];
+      double **r_in_mag2 = new double*[ap->integral[i]->r_steps];
       GPU_PRECISION *host_V = new GPU_PRECISION[ap->integral[i]->nu_steps * 
 						ap->integral[i]->r_steps];
 
@@ -426,12 +432,16 @@ void gpu__initialize()
 		       ap->integral[i]->nu_steps, 
 		       ap->integral[i]->nu_min, 
 		       ap->integral[i]->nu_step_size,
-		       irv, r_point, qw_r3_N, 
+		       irv, r_point, 
+		       r_in_mag, r_in_mag2,
+		       qw_r3_N, 
 		       reff_xr_rp3, nus, ids);
       setup_r_point_texture(ap->integral[i]->r_steps, 
 			    ap->convolve, i, r_point);
       setup_qw_r3_N_texture(ap->integral[i]->r_steps, 
 			    ap->convolve, i, qw_r3_N);
+      setup_r_in_mag_texture2(ap->integral[i]->r_steps, 
+			      ap->convolve, i, r_in_mag, r_in_mag2);
 
 
       for (int k = 0; k < ap->integral[i]->nu_steps; k++) {
@@ -446,6 +456,8 @@ void gpu__initialize()
       delete [] r_point;
       delete [] ids;
       delete [] nus;
+      delete [] r_in_mag;
+      delete [] r_in_mag2;
 
       cutilSafeCall(cudaMalloc((void**) &(device_V[i]), 
 			       ap->integral[i]->nu_steps * 
@@ -518,9 +530,13 @@ void gpu__initialize()
   printf("mallocing %d probability\n", gpu_num_stars);
   cutilSafeCall(cudaMalloc((void**) &device_probability, 
 			   gpu_num_stars * sizeof(GPU_PRECISION)));
-  cutilSafeCall(cudaMalloc((void**) &device_probability_correction, 
+  cutilSafeCall(cudaMalloc((void**) &device_bg_only, 
 			   gpu_num_stars * sizeof(GPU_PRECISION)));
+  cutilSafeCall(cudaMalloc((void**) &device_st_only, 
+			   ap->number_streams * gpu_num_stars * sizeof(GPU_PRECISION)));
   host_probability = new GPU_PRECISION[gpu_num_stars];
+  host_bg_only = new GPU_PRECISION[gpu_num_stars];
+  host_st_only = new GPU_PRECISION[gpu_num_stars * ap->number_streams];
 
   unsigned int total, free;
   cuMemGetInfo(&free, &total);
@@ -561,8 +577,11 @@ void gpu__free_constants() {
 
   cutilSafeCall(cudaFree(device_stars));
   cutilSafeCall(cudaFree(device_probability));
-  cutilSafeCall(cudaFree(device_probability_correction));
+  cutilSafeCall(cudaFree(device_bg_only));
+  cutilSafeCall(cudaFree(device_st_only));
   delete [] host_probability;
+  delete [] host_bg_only;
+  delete [] host_st_only;
 }
 
 template <unsigned int number_streams>
@@ -593,16 +612,24 @@ void cpu__sum_integrals(int iteration, double *background_integral,
 			   device_bg_int[iteration], 
 			   gpu_int_size * sizeof(GPU_PRECISION), 
 			   cudaMemcpyDeviceToHost) );
+  cutilSafeCall(cudaMemcpy(host_bg_int_c[iteration], 
+			   device_bg_int_c[iteration], 
+			   gpu_int_size * sizeof(GPU_PRECISION), 
+			   cudaMemcpyDeviceToHost) );
 
   double sum = 0.0;
+  double correction_sum = 0.0;
   for (int i = 0; i < int_size; i++) 
     {
       sum += (double)(host_bg_int[iteration][i]);
+      correction_sum += (host_bg_int_c[iteration][i]);
       //printf("background_integral[%d/%d]: %.15f\n", i, 
       //int_size, host_bg_int[iteration][i]);q
       //printf("(sum(background_integral[%d/%d]: %.15lf\n", i, 
       //integral_size[iteration], sum);
     }
+  printf("Applying a bg correction of %.25f\n", correction_sum);
+  sum += correction_sum;
   if (iteration == 0) 
     *background_integral = sum;
   else 
@@ -642,26 +669,58 @@ void cpu__sum_integrals(int iteration, double *background_integral,
 /********
  *	Likelihood calculation
  ********/
-
-__global__ void 
-gpu__zero_likelihood(int offset, 
-		     GPU_PRECISION *probability) 
-{
-  probability[offset + threadIdx.x + (blockDim.x * blockIdx.x)] = 0.0;
-}
-
-void cpu__sum_likelihood(double *probability) {
-  for (int i = 0; i < sp->number_stars; i++) 
-    {
-      host_probability[i] = 0;;
-    }
+void cpu__sum_likelihood(int num_streams, double *probability, 
+			 double *bg_only, double *st_only,
+			 int gpu_num_stars) {
   cutilSafeCall(cudaMemcpy(host_probability, device_probability,
-			   sp->number_stars * sizeof(GPU_PRECISION),
+			   gpu_num_stars * sizeof(GPU_PRECISION),
+			   cudaMemcpyDeviceToHost));
+  cutilSafeCall(cudaMemcpy(host_bg_only, device_bg_only,
+			   gpu_num_stars * sizeof(GPU_PRECISION),
+			   cudaMemcpyDeviceToHost));
+  cutilSafeCall(cudaMemcpy(host_st_only, device_st_only,
+			   num_streams * gpu_num_stars * sizeof(GPU_PRECISION),
 			   cudaMemcpyDeviceToHost));
   printf("number_stars:%d\n", sp->number_stars);
+  *probability = 0.0;
+  *bg_only = 0.0;
+  double correction1 = 0.0;
+  double correction2 = 0.0;
+  double correction3[num_streams];
+  for(int i = 0;i<num_streams;++i)
+    {
+      correction3[i] = 0.0;
+      st_only[i] = 0.0;
+    }
   for (int i = 0; i < sp->number_stars; i++) 
     {
+      //printf("host_probability[%d]=%.15lf\n", i, host_probability[i]);
+      //printf("host_bg[%d]=%.15lf\n", i, host_bg_only[i]);
+      double temp = *probability;
       *probability += host_probability[i];
+      correction1 += (host_probability[i] - (*probability - temp));
+      temp = *bg_only;
+      *bg_only += host_bg_only[i];
+      correction2 += (host_bg_only[i] - (*bg_only - temp));
+      for(int i = 0;i<num_streams;++i)
+	{
+	  //printf("host_st[%d]=%.15lf\n", i, host_st_only[i * gpu_num_stars]);
+	  temp = st_only[i];
+	  st_only[i] += host_st_only[i*gpu_num_stars];
+	  correction3[i] += (host_st_only[i*gpu_num_stars] - (st_only[i] - temp));
+	}
+    }
+  *probability += correction1;
+  printf("Applyting a correction of %.25f for probability\n", correction1);
+  *probability /= sp->number_stars;
+  *bg_only += correction2;
+  *bg_only /= sp->number_stars;
+  printf("Applyting a correction of %.25f for bg_only\n", correction2);
+  for(int i = 0;i<num_streams;++i)
+    {
+      st_only[i] += correction3[i];
+      st_only[i] /= sp->number_stars;
+      printf("Applyting a correction of %.25f for st_only[%d]\n", correction3[i], i);
     }
 }
 
@@ -678,9 +737,6 @@ void cpu__sum_likelihood(double *probability) {
 //#define alpha parameters[1]
 #define q (parameters[0])
 #define r0 (parameters[1])
-#define BG_A (parameters[3])
-#define BG_B (parameters[4])
-#define BG_C (parameters[5])
 //#define delta parameters[4]
 
 double gpu__likelihood(double *parameters) {
@@ -779,6 +835,19 @@ double gpu__likelihood(double *parameters) {
   cutStartTimer(timer);
 
   double q_squared_inverse = 1 / (q * q);
+  double bg_a, bg_b, bg_c;
+  if (ap->aux_bg_profile == 0) {
+    bg_a    = 0; 
+    bg_b    = 0; 
+    bg_c    = 0; 
+  } else if (ap->aux_bg_profile == 1) {
+    bg_a    = ap->background_parameters[4]; //vickej2_bg
+    bg_b    = ap->background_parameters[5]; //vickej2_bg
+    bg_c    = ap->background_parameters[6]; //vickej2_bg 
+  }
+  printf("bg_a:%f\n", bg_a);
+  printf("bg_b:%f\n", bg_b);
+  printf("bg_c:%f\n", bg_c);
   for (int i = 0; i < ap->number_integrals; i++) 
     {
       bind_texture(i);
@@ -802,7 +871,6 @@ double gpu__likelihood(double *parameters) {
 	  EXECUTE_ZERO_INTEGRALS(device_bg_int_c[i],
 				 device_st_int_c[i]);
 	}
-      int aux_bg_profile = 0;//ap->aux_bg_profile;
 #ifdef SHARED_MEMORY
       int shared_mem_size = (ap->number_streams + ap->number_streams * 3 * 2) *
 	sizeof(GPU_PRECISION);
@@ -815,7 +883,16 @@ double gpu__likelihood(double *parameters) {
 	  boinc_fraction_done(current_work / (double) total_work);
 	  for(int mu_step = 0; mu_step < total_blocks; mu_step += max_blocks) {
 	    dim3 dimGrid(min(max_blocks, total_blocks - mu_step), R_INCREMENT);
-	    EXECUTE_INTEGRAL_KERNEL;
+	    if (ap->aux_bg_profile == 1)
+	      {
+		const int aux_bg_profile = 1;
+		EXECUTE_INTEGRAL_KERNEL;
+	      }
+	    else
+	      {
+		const int aux_bg_profile = 0;
+		EXECUTE_INTEGRAL_KERNEL;
+	      }
 	    cudaError err = cudaThreadSynchronize();
 	    if(err != cudaSuccess)
 	      {
@@ -827,12 +904,14 @@ double gpu__likelihood(double *parameters) {
 	  current_work += R_INCREMENT;
 	}
       cpu__sum_integrals(i, &background_integral, stream_integrals);
-      printf("background_integral: %.15lf\n", background_integral);
-      for(int i = 0;i<ap->number_streams;++i)
-	{
-	  printf("stream_integral[%d]: %.15lf\n", i, stream_integrals[i]);
-	}
     }
+  fprintf(stderr, "<background_integral> %.20lf </background_integral>\n", background_integral);
+  fprintf(stderr, "<stream_integrals>");
+  for(int i = 0;i<ap->number_streams;++i)
+    {
+      fprintf(stderr, " %.20lf", stream_integrals[i]);
+    }
+  fprintf(stderr, "</stream_integrals>\n");
   cutStopTimer(timer);
   float t = cutGetTimerValue(timer);
   fprintf(stderr, "gpu__integral_kernel3 took %f ms\n", t);
@@ -846,7 +925,7 @@ double gpu__likelihood(double *parameters) {
       sum_exp_weights += exp_weight;
       stream_weight[i] = exp_weight/stream_integrals[i];
     }
-
+  sum_exp_weights *= 0.001;
   GPU_PRECISION f_background_weight[1];
   GPU_PRECISION *f_stream_weight = new GPU_PRECISION[ap->number_streams];
   f_background_weight[0] = (GPU_PRECISION)( bg_weight / sum_exp_weights );
@@ -875,14 +954,23 @@ double gpu__likelihood(double *parameters) {
   int total_blocks = gpu_num_stars / NUM_THREADS;
   dim3 dimBlock(NUM_THREADS);
   //	printf("num streams:%u\n", number_streams);
+  int number_stars = get_total_threads(sp->number_stars);
   for(int mu_step = 0; mu_step < total_blocks; mu_step += max_blocks) 
     {
       dim3 dimGrid(min(max_blocks, total_blocks - mu_step), R_INCREMENT);
       int convolve = ap->convolve;
-      int number_stars = get_total_threads(sp->number_stars);
       int offset = mu_step * NUM_THREADS;
       //printf("mu_step:%d, offset:%d\n", mu_step, offset);
-      EXECUTE_LIKELIHOOD_KERNEL;
+      if (ap->aux_bg_profile == 1)
+	{
+	  const int aux_bg_profile = 1;
+	  EXECUTE_LIKELIHOOD_KERNEL;
+	}
+      else
+	{
+	  const int aux_bg_profile = 0;
+	  EXECUTE_LIKELIHOOD_KERNEL;
+	}
       cudaError_t err;
       err = cudaThreadSynchronize();
       if(err != cudaSuccess)
@@ -895,8 +983,17 @@ double gpu__likelihood(double *parameters) {
   cutStopTimer(timer);
   t = cutGetTimerValue(timer);
   fprintf(stderr, "gpu__likelihood_kernel took %f ms\n", t);
-  cpu__sum_likelihood(&likelihood);
-  likelihood /= sp->number_stars;
+  double bg_only;
+  double *st_only = new double[ap->number_streams];
+  cpu__sum_likelihood(ap->number_streams, &likelihood, &bg_only,
+		      st_only, number_stars);
+  fprintf(stderr, "<background_only_likelihood> %.20lf </background_only_likelihood>\n", 
+	  bg_only - 3.0);
+  fprintf(stderr, "<stream_only_likelihood>");
+  for (int i = 0; i < ap->number_streams; i++) {
+    fprintf(stderr, " %.20lf", st_only[i] - 3.0);
+  }
+  fprintf(stderr, " </stream_only_likelihood>\n");
   //printf("likelihood: %.30lf\n", likelihood);
 
   delete [] fstream_a;

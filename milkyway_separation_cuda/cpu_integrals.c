@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#include "../astronomy/parameters.h"
+#include "../milkyway_separation/parameters.h"
 
 #include "r_constants.h"
 #include "pi_constants.h"
