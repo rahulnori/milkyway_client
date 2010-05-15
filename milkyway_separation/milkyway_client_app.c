@@ -66,24 +66,24 @@ using std::string;
 #include "parameters.h"
 #include "star_points.h"
 #include "evaluation_state.h"
-#include "../searches/search_parameters.h"
-#include "../searches/result.h"
-#include "../evaluation/simple_evaluator.h"
-#include "../evaluation/evaluator.h"
+//#include "../searches/search_parameters.h"
+//#include "../searches/result.h"
+//#include "../evaluation/simple_evaluator.h"
+//#include "../evaluation/evaluator.h"
 
 #ifdef MILKYWAY_GPU
 	#ifdef COMPUTE_ON_GPU
 void init_constants(ASTRONOMY_PARAMETERS *ap);
-		#include "../astronomy_gpu/evaluation_gpu.h"
+		#include "../milkyway_separation_cuda/evaluation_gpu.h"
 	#endif
 	#ifdef COMPUTE_ON_CPU
 		#include "evaluation_optimized.h"
 	#endif
 
-	#include "../searches/hessian.h"
-	#include "../searches/gradient.h"
-	#include "../searches/newton_method.h"
-	#include "../searches/line_search.h"
+//#include "../searches/hessian.h"
+//	#include "../searches/gradient.h"
+//	#include "../searches/newton_method.h"
+//	#include "../searches/line_search.h"
 	#include "../util/matrix.h"
 	#include "../util/io_util.h"
 
@@ -110,6 +110,10 @@ void init_constants(ASTRONOMY_PARAMETERS *ap);
 ASTRONOMY_PARAMETERS *ap;
 STAR_POINTS *sp;
 EVALUATION_STATE *es;
+
+void init_simple_evaluator(double (*likelihood_function)(double*));
+extern double (*evaluate)(double*);
+
 
 #ifdef COMPUTE_ON_CPU
 double astronomy_evaluate(double *parameters) {
@@ -371,9 +375,9 @@ int main(int argc, char **argv){
 	//devices on the system and choose the one
 	//with double precision support and the most
 	//GFLOPS
-	APP_INIT_DATA init_data;
-	boinc_get_init_data_p(&init_data);
-	char *project_prefs = init_data.project_preferences;
+	//APP_INIT_DATA init_data;
+	//boinc_get_init_data_p(&init_data);
+	char *project_prefs = 0;//init_data.project_preferences;
 	if (choose_gpu(argc, argv) == -1)
 	  {
 	    fprintf(stderr, "Unable to find a capable GPU\n");
