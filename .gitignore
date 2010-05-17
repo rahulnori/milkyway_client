@@ -2,6 +2,7 @@
 *.[oa]
 #ignore boinc files generated from runs
 tests/boinc_finish_called
+tests/boinc_lockfile
 tests/init_data.xml
 tests/out
 tests/stars.txt

@@ -90,8 +90,8 @@ GPU_PRECISION	*host_probability;
 GPU_PRECISION	*host_bg_only;
 GPU_PRECISION	*host_st_only;
 
-int max_blocks = 128;
-//int max_blocks = 50000;
+//int max_blocks = 128;
+int max_blocks = 50000;
 
 #define kernel3__mu_step	(mu_offset + blockIdx.x)
 #define kernel3__mu_steps	(mu_steps)
@@ -702,12 +702,12 @@ void cpu__sum_likelihood(int num_streams, double *probability,
       temp = *bg_only;
       *bg_only += host_bg_only[i];
       correction2 += (host_bg_only[i] - (*bg_only - temp));
-      for(int i = 0;i<num_streams;++i)
+      for(int j = 0;j<num_streams;++j)
 	{
 	  //printf("host_st[%d]=%.15lf\n", i, host_st_only[i * gpu_num_stars]);
-	  temp = st_only[i];
-	  st_only[i] += host_st_only[i*gpu_num_stars];
-	  correction3[i] += (host_st_only[i*gpu_num_stars] - (st_only[i] - temp));
+	  temp = st_only[j];
+	  st_only[j] += host_st_only[j*gpu_num_stars+i];
+	  correction3[j] += (host_st_only[j*gpu_num_stars+i] - (st_only[j] - temp));
 	}
     }
   *probability += correction1;
