@@ -87,7 +87,7 @@ __global__ void gpu__likelihood_kernel(int offset, int convolve,
   }
   pos = (offset + threadIdx.x + (blockDim.x * blockIdx.x));
   GPU_PRECISION probability_sum = bg_int * constant_background_weight[0];
-  if (probability_sum == 0.0) 
+  if (probability_sum * reff_xr_rp3 == 0.0) 
     bg_only[pos] = -238.0;
   else 
     bg_only[pos] = log10(probability_sum * reff_xr_rp3);
@@ -98,7 +98,7 @@ __global__ void gpu__likelihood_kernel(int offset, int convolve,
   for (i = 0; i < number_streams; i++) {
     st_only[pos] = st_int[i] * constant_stream_weight[i];
     probability_sum += st_only[pos];
-    if (st_only[pos] == 0.0)
+    if (st_only[pos] * reff_xr_rp3 == 0.0)
       st_only[pos] = -238.0;
     else
       st_only[pos] = log10(st_only[pos] * reff_xr_rp3);

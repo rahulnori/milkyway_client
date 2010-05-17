@@ -704,10 +704,12 @@ void cpu__sum_likelihood(int num_streams, double *probability,
       correction2 += (host_bg_only[i] - (*bg_only - temp));
       for(int j = 0;j<num_streams;++j)
 	{
-	  //printf("host_st[%d]=%.15lf\n", i, host_st_only[i * gpu_num_stars]);
 	  temp = st_only[j];
 	  st_only[j] += host_st_only[j*gpu_num_stars+i];
 	  correction3[j] += (host_st_only[j*gpu_num_stars+i] - (st_only[j] - temp));
+	  //printf("host_st[%d,%d]=%.45lf correction=%.15lf\n", 
+	  //	 i, j, host_st_only[i+j * gpu_num_stars],
+	  //	 correction3[j]);
 	}
     }
   *probability += correction1;
