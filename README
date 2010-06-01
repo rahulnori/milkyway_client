@@ -1,0 +1,12 @@
+Please use the new repository at
+  http://github.com/arsenm/milkywayathome_client
+
+The old one was not properly / actually migrated from CVS, losing
+history etc. The new one is an actual import from the old repository.
+
+Hypothetically I've repeated any changes that were made to this
+repository since it was created into the new one, on top of the
+history from the old CVS. If something is broken or missing and you
+want me to fix it, just let me know or you can try to do it yourself.
+
+
